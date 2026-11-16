@@ -22,7 +22,7 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
-from backend.utils.helpers import ROOT_DIR, timed
+from backend.utils.helpers import MODELS_DIR, ROOT_DIR, timed
 
 logger = logging.getLogger("faceai.text2face_service")
 
@@ -30,19 +30,28 @@ logger = logging.getLogger("faceai.text2face_service")
 _pipeline = None
 _pipeline_model_id: Optional[str] = None
 _pipeline_lock = threading.Lock()
-DIFFUSERS_DIR = ROOT_DIR / "models" / "text2face"
+DIFFUSERS_DIR = (
+    (MODELS_DIR / "text2face")
+    if (MODELS_DIR / "text2face").exists()
+    else (ROOT_DIR / "models" / "text2face")
+)
+
+
+def _has_local_weights() -> bool:
+    if not DIFFUSERS_DIR.exists():
+        return False
+    return any(
+        f.name not in (".gitkeep", ".DS_Store") and (f.suffix in (".safetensors", ".bin", ".json") or (f.is_dir() and f.name != "__pycache__"))
+        for f in DIFFUSERS_DIR.iterdir()
+    )
 
 
 def _get_pipeline(model_id: str):
     """Load or retrieve the cached Stable Diffusion pipeline."""
     global _pipeline, _pipeline_model_id
 
-    # Check if local model directory exists or remote diffusers explicitly enabled
-    can_load_diffusers = (
-        DIFFUSERS_DIR.exists()
-        and any(DIFFUSERS_DIR.iterdir())
-        or os.environ.get("USE_REMOTE_DIFFUSERS", "0") == "1"
-    )
+    # Check if real local model weights exist or remote diffusers explicitly enabled
+    can_load_diffusers = _has_local_weights() or os.environ.get("USE_REMOTE_DIFFUSERS", "0") == "1"
 
     if not can_load_diffusers:
         raise RuntimeError("Remote diffusers disabled by default for instant zero-latency generation.")

@@ -60,10 +60,13 @@ def generate(image: Image.Image) -> Tuple[Image.Image, str]:
         # For now fall through to PIL since no GAN implementation ships yet.
         logger.info("GAN weights found – but GAN inference is not yet implemented, using PIL fallback")
 
-    # PIL fallback (uses modules/sketch.py)
-    import sys
-    sys.path.insert(0, str(ROOT_DIR))
-    from modules.sketch import generate_sketch
+    # Sketch generator (uses backend.modules.sketch or modules.sketch)
+    try:
+        from backend.modules.sketch import generate_sketch
+    except ImportError:
+        import sys
+        sys.path.insert(0, str(ROOT_DIR))
+        from modules.sketch import generate_sketch
 
     output, mode = generate_sketch(image)
     return output, mode

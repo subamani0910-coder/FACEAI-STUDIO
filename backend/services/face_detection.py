@@ -18,12 +18,16 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from backend.utils.helpers import ROOT_DIR
+from backend.utils.helpers import MODELS_DIR, ROOT_DIR
 
 logger = logging.getLogger("faceai.face_detection")
 
 # Model path
-YUNET_MODEL_PATH = ROOT_DIR / "models" / "face_detector" / "face_detection_yunet_2023mar.onnx"
+YUNET_MODEL_PATH = (
+    (MODELS_DIR / "face_detector" / "face_detection_yunet_2023mar.onnx")
+    if (MODELS_DIR / "face_detector" / "face_detection_yunet_2023mar.onnx").exists()
+    else (ROOT_DIR / "models" / "face_detector" / "face_detection_yunet_2023mar.onnx")
+)
 
 _detector: Optional[cv2.FaceDetectorYN] = None
 _current_input_size: Tuple[int, int] = (320, 320)

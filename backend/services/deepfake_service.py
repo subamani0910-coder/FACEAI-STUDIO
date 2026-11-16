@@ -17,12 +17,16 @@ from torchvision import transforms
 
 from backend.services.face_detection import detect_faces
 from backend.services.image_processing import image_to_base64
-from backend.utils.helpers import ROOT_DIR, timed
+from backend.utils.helpers import MODELS_DIR, MODULES_DIR, ROOT_DIR, timed
 
 logger = logging.getLogger("faceai.deepfake_service")
 
 # ── Model path ─────────────────────────────────────────────────────────
-MODEL_PATH = ROOT_DIR / "models" / "deepfake_cnn_fft.pth"
+MODEL_PATH = (
+    (MODELS_DIR / "deepfake_cnn_fft.pth")
+    if (MODELS_DIR / "deepfake_cnn_fft.pth").exists()
+    else (ROOT_DIR / "models" / "deepfake_cnn_fft.pth")
+)
 
 # ── Lazy-loaded singleton ─────────────────────────────────────────────
 _model: Optional[Any] = None
@@ -41,10 +45,13 @@ def _get_model():
     if _model is not None:
         return _model, _device
 
-    # Import the architecture from the existing module
-    import sys, importlib
-    sys.path.insert(0, str(ROOT_DIR))
-    from modules.deepfake import CNNFFTDetector
+    # Import the architecture from backend.modules or modules
+    try:
+        from backend.modules.deepfake import CNNFFTDetector
+    except ImportError:
+        import sys
+        sys.path.insert(0, str(ROOT_DIR))
+        from modules.deepfake import CNNFFTDetector
 
     _device = "cuda" if torch.cuda.is_available() else "cpu"
     model = CNNFFTDetector().to(_device)

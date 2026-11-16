@@ -10,10 +10,13 @@ from typing import Any, Callable
 logger = logging.getLogger("faceai")
 
 # ── Paths ──────────────────────────────────────────────────────────────
-ROOT_DIR = Path(__file__).resolve().parents[2]  # project root
-BACKEND_DIR = ROOT_DIR / "backend"
-MODELS_DIR = BACKEND_DIR / "models"
-MODULES_DIR = ROOT_DIR / "modules"
+BACKEND_DIR = Path(__file__).resolve().parents[1]  # backend directory
+_parent = BACKEND_DIR.parent
+ROOT_DIR = _parent if (_parent / "frontend").exists() else BACKEND_DIR
+
+# Check inside backend first, then fallback to root
+MODELS_DIR = BACKEND_DIR / "models" if (BACKEND_DIR / "models").exists() else (ROOT_DIR / "models")
+MODULES_DIR = BACKEND_DIR / "modules" if (BACKEND_DIR / "modules").exists() else (ROOT_DIR / "modules")
 
 
 def request_id() -> str:
