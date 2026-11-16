@@ -1,9 +1,105 @@
-import streamlit as st
-from PIL import Image
+import os
 import io
-from modules.deepfake import predict_deepfake
-from modules.sketch import generate_sketch
-from modules.text2face import generate_face
+import json
+import base64
+import urllib.request
+import urllib.parse
+from PIL import Image
+import streamlit as st
+
+BACKEND_URL = os.environ.get("BACKEND_URL", "").rstrip("/")
+
+# Local modules fallback
+try:
+    from modules.deepfake import predict_deepfake as _local_predict_deepfake
+    from modules.sketch import generate_sketch as _local_generate_sketch
+    from modules.text2face import generate_face as _local_generate_face
+except ImportError:
+    _local_predict_deepfake = None
+    _local_generate_sketch = None
+    _local_generate_face = None
+
+
+def predict_deepfake_fn(image: Image.Image):
+    if BACKEND_URL:
+        try:
+            buf = io.BytesIO()
+            image.save(buf, format="JPEG")
+            boundary = "----WebKitFormBoundaryFaceAIService"
+            body = (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="file"; filename="face.jpg"\r\n'
+                f"Content-Type: image/jpeg\r\n\r\n"
+            ).encode("utf-8") + buf.getvalue() + f"\r\n--{boundary}--\r\n".encode("utf-8")
+            req = urllib.request.Request(
+                f"{BACKEND_URL}/api/deepfake/analyze",
+                data=body,
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode())
+                heatmap = None
+                if data.get("gradcam_heatmap_base64"):
+                    h_bytes = base64.b64decode(data["gradcam_heatmap_base64"])
+                    heatmap = Image.open(io.BytesIO(h_bytes))
+                return {
+                    "status": "model" if data.get("status") == "ok" else "heuristic",
+                    "label": data.get("prediction", "REAL"),
+                    "confidence": float(data.get("confidence", 85.0)),
+                    "heatmap": heatmap
+                }
+        except Exception as exc:
+            st.warning(f"Backend service call failed ({exc}). Trying local model...")
+    if _local_predict_deepfake is not None:
+        return _local_predict_deepfake(image)
+    return {"status": "error", "message": "Deepfake service unavailable."}
+
+
+def generate_sketch_fn(image: Image.Image):
+    if BACKEND_URL:
+        try:
+            buf = io.BytesIO()
+            image.save(buf, format="JPEG")
+            boundary = "----WebKitFormBoundaryFaceAIService"
+            body = (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="file"; filename="photo.jpg"\r\n'
+                f"Content-Type: image/jpeg\r\n\r\n"
+            ).encode("utf-8") + buf.getvalue() + f"\r\n--{boundary}--\r\n".encode("utf-8")
+            req = urllib.request.Request(
+                f"{BACKEND_URL}/api/sketch/generate",
+                data=body,
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw_png = resp.read()
+                mode = resp.headers.get("X-FaceAI-Mode", "Realistic Pencil Sketch")
+                return Image.open(io.BytesIO(raw_png)), mode
+        except Exception as exc:
+            st.warning(f"Backend service call failed ({exc}). Trying local generator...")
+    if _local_generate_sketch is not None:
+        return _local_generate_sketch(image)
+    return image, "Fallback"
+
+
+def generate_face_fn(prompt: str, model_id: str):
+    if BACKEND_URL:
+        try:
+            form_data = urllib.parse.urlencode({"prompt": prompt, "model_id": model_id}).encode("utf-8")
+            req = urllib.request.Request(
+                f"{BACKEND_URL}/api/text-to-face/generate",
+                data=form_data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                raw_png = resp.read()
+                label = resp.headers.get("X-FaceAI-Label", "AI-GENERATED - FICTIONAL FACE")
+                return Image.open(io.BytesIO(raw_png)), label
+        except Exception as exc:
+            st.warning(f"Backend service call failed ({exc}). Trying local generator...")
+    if _local_generate_face is not None:
+        return _local_generate_face(prompt, model_id)
+    raise RuntimeError("Text-to-face generator unavailable.")
 
 st.set_page_config(page_title="FaceAI Studio", page_icon="🧠", layout="wide")
 st.markdown("""
@@ -37,7 +133,7 @@ with tabs[0]:
         with c2:
             if st.button("Analyze image", type="primary", key="analyze"):
                 with st.spinner("Analyzing image..."):
-                    result = predict_deepfake(image)
+                    result = predict_deepfake_fn(image)
                 if result["status"] == "model":
                     st.metric("Prediction", result["label"])
                     st.metric("Model confidence", f'{result["confidence"]:.1f}%')
@@ -58,7 +154,7 @@ with tabs[1]:
         with c1: st.image(image, caption="Original photo", use_container_width=True)
         if st.button("Generate sketch", type="primary"):
             with st.spinner("Creating sketch..."):
-                output, mode = generate_sketch(image)
+                output, mode = generate_sketch_fn(image)
             with c2:
                 st.image(output, caption=f"Generated sketch — {mode}", use_container_width=True)
             st.download_button("Download sketch", data=image_to_bytes(output), file_name="face_sketch.png", mime="image/png")
@@ -74,7 +170,7 @@ with tabs[2]:
         else:
             with st.spinner("Loading model and generating image. First run may take time and download model weights..."):
                 try:
-                    output, note = generate_face(prompt, model_id)
+                    output, note = generate_face_fn(prompt, model_id)
                     st.image(output, caption="AI-generated fictional face", use_container_width=True)
                     st.warning("AI-GENERATED — fictional synthetic image. Not a real person's photograph.")
                     st.caption(note)

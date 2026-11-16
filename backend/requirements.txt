@@ -8,4 +8,5 @@ torchvision>=0.17
 diffusers>=0.30
 transformers>=4.42
 accelerate>=0.32
+opencv-python-headless>=4.8
 safetensors>=0.4
