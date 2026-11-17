@@ -19,7 +19,14 @@ from typing import Optional, Tuple
 
 import cv2
 import numpy as np
-import torch
+
+try:
+    import torch
+    HAS_TORCH = True
+except ImportError:
+    HAS_TORCH = False
+    torch = None
+
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
 from backend.utils.helpers import MODELS_DIR, ROOT_DIR, timed
@@ -60,9 +67,12 @@ def _get_pipeline(model_id: str):
         if _pipeline is not None and _pipeline_model_id == model_id:
             return _pipeline
 
+        if not HAS_TORCH:
+            raise RuntimeError("PyTorch is not available for Stable Diffusion in serverless mode. Using neural synthetic generator.")
+
         from diffusers import StableDiffusionPipeline
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = "cuda" if (torch and torch.cuda.is_available()) else "cpu"
         dtype = torch.float16 if device == "cuda" else torch.float32
 
         logger.info("Initializing Stable Diffusion pipeline '%s' on %s (%s)...", model_id, device, dtype)
